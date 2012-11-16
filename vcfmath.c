@@ -26,18 +26,18 @@ double *bcf_m_get_pdg3(const bcf_hdr_t *h, bcf1_t *b)
 	if (ptr->type == BCF_BT_INT8) {
 		int8_t *p = (int8_t*)ptr->p;
 		for (i = k = 0; i < b->n_sample; ++i, p += ptr->size) // FIXME: check if *p < 0
-			pdg[k++] = g_q2p[p[0]], pdg[k++] = g_q2p[p[1]], pdg[k++] = g_q2p[p[2]];
+			pdg[k++] = g_q2p[p[2]], pdg[k++] = g_q2p[p[1]], pdg[k++] = g_q2p[p[0]];
 	} else if (ptr->type == BCF_BT_INT16) {
 		int16_t *p = (int16_t*)ptr->p;
 		for (i = k = 0; i < b->n_sample; ++i, p += ptr->size) {
-			pdg[k++] = g_q2p[p[0]<255?p[0]:255];
-			pdg[k++] = g_q2p[p[1]<255?p[1]:255];
 			pdg[k++] = g_q2p[p[2]<255?p[2]:255];
+			pdg[k++] = g_q2p[p[1]<255?p[1]:255];
+			pdg[k++] = g_q2p[p[0]<255?p[0]:255];
 		}
 	} else if (ptr->type == BCF_BT_FLOAT) {
 		float *p = (float*)ptr->p;
 		for (i = k = 0; i < b->n_sample; ++i, p += ptr->size)
-			pdg[k++] = p[0], pdg[k++] = p[1], pdg[k++] = p[2];
+			pdg[k++] = p[2], pdg[k++] = p[1], pdg[k++] = p[1];
 	}
 	return pdg;
 }
@@ -87,7 +87,7 @@ int bcf_m_lk2(int n, const double *pdg3, double *y, const uint8_t *_ploidy)
 			if (_min == 0) k = 0, z[1][k] = (M0-k+1) * (M0-k+2) * p[0] * z[0][k];
 			if (_min <= 1) k = 1, z[1][k] = (M0-k+1) * (M0-k+2) * p[0] * z[0][k] + k*(M0-k+2) * p[1] * z[0][k-1];
 			for (k = _min < 2? 2 : _min; k <= _max; ++k)
-				z[1][k] = (M0-k+1)*(M0-k+2) * p[0] * z[0][k] + k*(M0-k+2) * p[1] * z[0][k-1] + k*(k-1)* p[2] * z[0][k-2];
+				z[1][k] = (M0-k+1)*(M0-k+2) * p[0] * z[0][k] + k*(M0-k+2) * p[1] * z[0][k-1] + k*(k-1) * p[2] * z[0][k-2];
 			for (k = _min, sum = 0.; k <= _max; ++k) sum += z[1][k];
 			for (k = _min; k <= _max; ++k) z[1][k] /= sum;
 			if (_min >= 1) z[1][_min-1] = 0.;
