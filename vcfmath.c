@@ -8,7 +8,7 @@ double *bcf_m_get_pdg3(const bcf_hdr_t *h, bcf1_t *b)
 {
 	double *pdg;
 	int i, k, id_PL, id_GL;
-	bcf_fmt_t *ptr;
+	bcf_fmt_t *ptr = 0;
 	if (g_q2p[0] == 0.)
 		for (i = 0; i < 256; ++i)
 			g_q2p[i] = pow(10., -0.1 * i);
@@ -63,7 +63,7 @@ int bcf_m_lk2(int n, const double *pdg3, double *y, const uint8_t *_ploidy)
 	z[1] = yswap = calloc(M + 1, sizeof(double));
 	z[0][0] = 1.;
 	last_min = last_max = 0;
-	for (j = 0, pdg = pdg3; j < n; ++j, pdg += 3) {
+	for (j = M = 0, pdg = pdg3; j < n; ++j, pdg += 3) {
 		int _min = last_min, _max = last_max;
 		long k, M0;
 		for (; _min < _max && z[0][_min] < TINY; ++_min) z[0][_min] = z[1][_min] = 0.;

@@ -1,39 +1,62 @@
+#include <math.h>
 #include <stdio.h>
 #include <unistd.h>
 #include "vcfmath.h"
 #include "vcf.h"
 
+#define FLAG_VCFIN   1
+#define FLAG_BCFOUT  2
+#define FLAG_CALL    4
+#define FLAG_NOINDEL 8
+#define FLAG_VARONLY 16
+
 int main(int argc, char *argv[])
 {
-	int i, c, clevel = -1, flag = 0, n_samples = -1, *imap = 0, excl_indel = 0;
+	int i, c, clevel = -1, flag = 0, n_samples = -1, *imap = 0, prior_type = BCF_MP_WF, M;
 	char *fn_ref = 0, *fn_out = 0, moder[8], modew[8], **samples = 0;
 	bcf_hdr_t *h, *hsub = 0;
 	htsFile *in, *out;
 	hts_idx_t *idx = 0;
 	bcf1_t *b;
 
-	while ((c = getopt(argc, argv, "l:bSt:o:T:s:GI")) >= 0) {
-		switch (c) {
-		case 'l': clevel = atoi(optarg); flag |= 2; break;
-		case 'S': flag |= 1; break;
-		case 'b': flag |= 2; break;
-		case 'G': n_samples = 0; break;
-		case 't': fn_ref = optarg; flag |= 1; break;
-		case 'o': fn_out = optarg; break;
-		case 's': samples = hts_readlines(optarg, &n_samples); break;
-		case 'I': excl_indel = 1; break;
+	double *phi = 0, theta = 0.001, p_var_thr = 0.5;
+
+	while ((c = getopt(argc, argv, "l:bSt:o:T:s:GvcIP:u:p:")) >= 0) {
+		if (c == 'l') clevel = atoi(optarg), flag |= 2;
+		else if (c == 'S') flag |= FLAG_VCFIN;
+		else if (c == 'b') flag |= FLAG_BCFOUT;
+		else if (c == 'c') flag |= FLAG_CALL;
+		else if (c == 'G') n_samples = 0;
+		else if (c == 't') fn_ref = optarg, flag |= 1;
+		else if (c == 'o') fn_out = optarg;
+		else if (c == 's') samples = hts_readlines(optarg, &n_samples);
+		else if (c == 'I') flag |= FLAG_NOINDEL;
+		else if (c == 'u') theta = atof(optarg);
+		else if (c == 'p') p_var_thr = atof(optarg);
+		else if (c == 'v') flag |= FLAG_VARONLY | FLAG_CALL;
+		else if (c == 'P') {
+			if (strcmp(optarg, "wf") == 0) prior_type = BCF_MP_WF;
+			else if (strcmp(optarg, "cond2") == 0) prior_type = BCF_MP_COND2;
+			else if (strcmp(optarg, "flat") == 0) prior_type = BCF_MP_FLAT;
+			else abort(); // not implemented
+			break;
 		}
 	}
 	if (argc == optind) {
 		fprintf(stderr, "\nUsage:   vcfview [options] <in.bcf>|<in.vcf>|<in.vcf.gz>\n\n");
-		fprintf(stderr, "Options: -b           output in BCF\n");
-		fprintf(stderr, "         -S           input is VCF\n");
+		fprintf(stderr, "Options: -b           BCF output\n");
+		fprintf(stderr, "         -S           VCF input\n");
 		fprintf(stderr, "         -o FILE      output file name [stdout]\n");
 		fprintf(stderr, "         -l INT       compression level [%d]\n", clevel);
 		fprintf(stderr, "         -t FILE      list of reference names and lengths [null]\n");
 		fprintf(stderr, "         -s FILE/STR  list of samples (STR if started with ':'; FILE otherwise) [null]\n");
 		fprintf(stderr, "         -G           drop individual genotype information\n");
-		fprintf(stderr, "         -I           exclude INDELs\n");
+		fprintf(stderr, "         -I           exclude INDELs\n\n");
+		fprintf(stderr, "         -c           variant calling\n");
+		fprintf(stderr, "         -v           only output variants (force -c)\n");
+		fprintf(stderr, "         -t FLOAT     theta [%.g]\n", theta);
+		fprintf(stderr, "         -p FLOAT     variant if P(var)>FLOAT [%g]\n", p_var_thr);
+		fprintf(stderr, "         -P FILE/STR  prior: wf, cond2, flat or FILE [wf]\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}
@@ -58,7 +81,8 @@ int main(int argc, char *argv[])
 	if (flag&2) strcat(modew, "b");
 	out = hts_open(fn_out? fn_out : "-", modew, 0);
 	vcf_hdr_write(out, hsub? hsub : h);
-	if (optind + 1 < argc && !(flag&1)) { // BAM input and has a region
+
+	if (optind + 1 < argc && !(flag&FLAG_VCFIN)) { // BAM input and has a region
 		if ((idx = bcf_index_load(argv[optind])) == 0) {
 			fprintf(stderr, "[E::%s] fail to load the BCF index\n", __func__);
 			return 1;
@@ -77,19 +101,38 @@ int main(int argc, char *argv[])
 			}
 		}
 		while (bcf_itr_next((BGZF*)in->fp, iter, b) >= 0) {
-			if (excl_indel && !bcf_is_snp(b)) continue;
-			if (n_samples >= 0) {
-				bcf_subset(h, b, n_samples, imap);
-				vcf_write1(out, hsub, b);
-			} else vcf_write1(out, h, b);
+			bcf_hdr_t *h1 = hsub? hsub : h;
+			if ((flag&FLAG_NOINDEL) && !bcf_is_snp(b)) continue;
+			if (imap) bcf_subset(h, b, n_samples, imap);
+			if (flag&FLAG_CALL) {
+				double *pdg, *y, p_var, p_ref;
+				long double sum = 0;
+				int k;
+				if (phi == 0) {
+					M = b->n_sample * 2; // FIXME: read ploidy from input!
+					phi = malloc((M + 1) * sizeof(double));
+					bcf_m_prior(prior_type, theta, M, phi);
+				}
+				pdg = bcf_m_get_pdg3(h1, b);
+				y = malloc((M + 1) * sizeof(double));
+				bcf_m_lk2(b->n_sample, pdg, y, 0);
+				for (k = 0, sum = 0.; k <= M; ++k) sum += (long double)phi[k] * y[k];
+				for (k = 0, p_var = 0.; k < M; ++k) p_var += phi[k] * y[k] / sum;
+				p_ref = phi[M] * y[M] / sum;
+				free(y); free(pdg);
+				b->qual = p_var > p_var_thr? -4.343 * log(p_ref) : 4.343 * log(p_var);
+				if ((flag&FLAG_VARONLY) && p_var < p_var_thr) continue;
+			}
+			vcf_write1(out, h1, b);
 		}
 		hts_itr_destroy(iter);
 	}
+	free(phi);
 	if (idx) hts_idx_destroy(idx);
 	hts_close(out);
 
 	bcf_destroy1(b);
-	if (n_samples > 0) {
+	if (imap) {
 		for (i = 0; i < n_samples; ++i) free(samples[i]);
 		free(samples);
 		bcf_hdr_destroy(hsub);

@@ -3,6 +3,7 @@
 
 #include "vcf.h"
 
+#define BCF_MP_FILE  0
 #define BCF_MP_FLAT  1
 #define BCF_MP_COND2 2
 #define BCF_MP_WF    3
