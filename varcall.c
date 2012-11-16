@@ -1,13 +1,14 @@
 #include <stdio.h>
 #include <unistd.h>
+#include "vcfmath.h"
 #include "vcf.h"
 
 int main(int argc, char *argv[])
 {
 	int i, c, clevel = -1, flag = 0, n_samples = -1, *imap = 0, excl_indel = 0;
-	char *fn_ref = 0, *fn_out = 0, moder[8], **samples = 0;
+	char *fn_ref = 0, *fn_out = 0, moder[8], modew[8], **samples = 0;
 	bcf_hdr_t *h, *hsub = 0;
-	htsFile *in;
+	htsFile *in, *out;
 	bcf1_t *b;
 
 	while ((c = getopt(argc, argv, "l:bSt:o:T:s:GI")) >= 0) {
@@ -51,47 +52,44 @@ int main(int argc, char *argv[])
 	}
 	b = bcf_init1();
 
-	if ((flag&4) == 0) { // VCF/BCF output
-		htsFile *out;
-		char modew[8];
-		strcpy(modew, "w");
-		if (clevel >= 0 && clevel <= 9) sprintf(modew + 1, "%d", clevel);
-		if (flag&2) strcat(modew, "b");
-		out = hts_open(fn_out? fn_out : "-", modew, 0);
-		vcf_hdr_write(out, hsub? hsub : h);
-		if (optind + 1 < argc && !(flag&1)) { // BAM input and has a region
-			hts_idx_t *idx;
-			if ((idx = bcf_index_load(argv[optind])) == 0) {
-				fprintf(stderr, "[E::%s] fail to load the BCF index\n", __func__);
-				return 1;
+	strcpy(modew, "w");
+	if (clevel >= 0 && clevel <= 9) sprintf(modew + 1, "%d", clevel);
+	if (flag&2) strcat(modew, "b");
+	out = hts_open(fn_out? fn_out : "-", modew, 0);
+	vcf_hdr_write(out, hsub? hsub : h);
+	if (optind + 1 < argc && !(flag&1)) { // BAM input and has a region
+		hts_idx_t *idx;
+		if ((idx = bcf_index_load(argv[optind])) == 0) {
+			fprintf(stderr, "[E::%s] fail to load the BCF index\n", __func__);
+			return 1;
+		}
+		for (i = optind + 1; i < argc; ++i) {
+			hts_itr_t *iter;
+			if ((iter = bcf_itr_querys(idx, h, argv[i])) == 0) {
+				fprintf(stderr, "[E::%s] fail to parse region '%s'\n", __func__, argv[i]);
+				continue;
 			}
-			for (i = optind + 1; i < argc; ++i) {
-				hts_itr_t *iter;
-				if ((iter = bcf_itr_querys(idx, h, argv[i])) == 0) {
-					fprintf(stderr, "[E::%s] fail to parse region '%s'\n", __func__, argv[i]);
-					continue;
-				}
-				while (bcf_itr_next((BGZF*)in->fp, iter, b) >= 0) {
-					if (excl_indel && !bcf_is_snp(b)) continue;
-					if (n_samples >= 0) {
-						bcf_subset(h, b, n_samples, imap);
-						vcf_write1(out, hsub, b);
-					} else vcf_write1(out, h, b);
-				}
-				hts_itr_destroy(iter);
-			}
-			hts_idx_destroy(idx);
-		} else {
-			while (vcf_read1(in, h, b) >= 0) {
+			while (bcf_itr_next((BGZF*)in->fp, iter, b) >= 0) {
 				if (excl_indel && !bcf_is_snp(b)) continue;
 				if (n_samples >= 0) {
 					bcf_subset(h, b, n_samples, imap);
 					vcf_write1(out, hsub, b);
 				} else vcf_write1(out, h, b);
 			}
+			hts_itr_destroy(iter);
 		}
-		hts_close(out);
+		hts_idx_destroy(idx);
+	} else {
+		while (vcf_read1(in, h, b) >= 0) {
+			if (excl_indel && !bcf_is_snp(b)) continue;
+			if (n_samples >= 0) {
+				bcf_subset(h, b, n_samples, imap);
+				vcf_write1(out, hsub, b);
+			} else vcf_write1(out, h, b);
+			bcf_m_get_pdg3(h, b);
+		}
 	}
+	hts_close(out);
 
 	bcf_destroy1(b);
 	if (n_samples > 0) {
