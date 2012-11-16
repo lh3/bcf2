@@ -9,6 +9,7 @@ int main(int argc, char *argv[])
 	char *fn_ref = 0, *fn_out = 0, moder[8], modew[8], **samples = 0;
 	bcf_hdr_t *h, *hsub = 0;
 	htsFile *in, *out;
+	hts_idx_t *idx = 0;
 	bcf1_t *b;
 
 	while ((c = getopt(argc, argv, "l:bSt:o:T:s:GI")) >= 0) {
@@ -58,37 +59,33 @@ int main(int argc, char *argv[])
 	out = hts_open(fn_out? fn_out : "-", modew, 0);
 	vcf_hdr_write(out, hsub? hsub : h);
 	if (optind + 1 < argc && !(flag&1)) { // BAM input and has a region
-		hts_idx_t *idx;
 		if ((idx = bcf_index_load(argv[optind])) == 0) {
 			fprintf(stderr, "[E::%s] fail to load the BCF index\n", __func__);
 			return 1;
 		}
-		for (i = optind + 1; i < argc; ++i) {
-			hts_itr_t *iter;
+	}
+	for (i = optind; i < argc; ++i) {
+		hts_itr_t *iter;
+		if (idx && i == optind) continue; // when there is an index, don't do linear reading
+		if (idx == 0 && i != optind) break; // when there is no index, don't do indexed reading
+		if (i == optind) { // linear reading
+			iter = hts_itr_query(0, HTS_IDX_REST, 0, 0);
+		} else { // indexed reading
 			if ((iter = bcf_itr_querys(idx, h, argv[i])) == 0) {
 				fprintf(stderr, "[E::%s] fail to parse region '%s'\n", __func__, argv[i]);
 				continue;
 			}
-			while (bcf_itr_next((BGZF*)in->fp, iter, b) >= 0) {
-				if (excl_indel && !bcf_is_snp(b)) continue;
-				if (n_samples >= 0) {
-					bcf_subset(h, b, n_samples, imap);
-					vcf_write1(out, hsub, b);
-				} else vcf_write1(out, h, b);
-			}
-			hts_itr_destroy(iter);
 		}
-		hts_idx_destroy(idx);
-	} else {
-		while (vcf_read1(in, h, b) >= 0) {
+		while (bcf_itr_next((BGZF*)in->fp, iter, b) >= 0) {
 			if (excl_indel && !bcf_is_snp(b)) continue;
 			if (n_samples >= 0) {
 				bcf_subset(h, b, n_samples, imap);
 				vcf_write1(out, hsub, b);
 			} else vcf_write1(out, h, b);
-			bcf_m_get_pdg3(h, b);
 		}
+		hts_itr_destroy(iter);
 	}
+	if (idx) hts_idx_destroy(idx);
 	hts_close(out);
 
 	bcf_destroy1(b);
