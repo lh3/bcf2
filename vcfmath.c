@@ -7,17 +7,17 @@ static double g_q2p[256];
 double *bcf_m_get_pdg3(const bcf_hdr_t *h, bcf1_t *b, const char *fmt)
 {
 	double *pdg;
-	int i, k, id_PL, id_GL;
+	int i, k, id_PL;
 	bcf_fmt_t *ptr = 0;
 	if (g_q2p[0] == 0.)
 		for (i = 0; i < 256; ++i)
 			g_q2p[i] = pow(10., -0.1 * i);
-	id_PL = bcf_id2int(h, BCF_DT_ID, "PL");
+	id_PL = bcf_id2int(h, BCF_DT_ID, fmt);
 	if (id_PL < 0) return 0;
 	bcf_unpack(b, BCF_UN_FMT);
 	pdg = malloc(b->n_sample * 3 * sizeof(double));
 	for (i = 0; i < b->n_fmt; ++i) {
-		if (b->d.fmt[i].id == id_PL || b->d.fmt[i].id == id_GL) {
+		if (b->d.fmt[i].id == id_PL) {
 			ptr = &b->d.fmt[i];
 			break;
 		}

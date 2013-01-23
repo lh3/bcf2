@@ -115,7 +115,17 @@ int main(int argc, char *argv[])
 				}
 				pdg = bcf_m_get_pdg3(h1, b, "PL");
 				y = malloc((M + 1) * sizeof(double));
-				bcf_m_lk2(b->n_sample, pdg, y, 0);
+				if (pdg == 0) {
+					double *pdg2[2], *y2[2];
+					y2[0] = malloc((M + 1) * sizeof(double));
+					y2[1] = malloc((M + 1) * sizeof(double));
+					pdg2[0] = bcf_m_get_pdg3(h1, b, "FL");
+					pdg2[1] = bcf_m_get_pdg3(h1, b, "RL");
+					bcf_m_lk2(b->n_sample, pdg2[0], y2[0], 0);
+					bcf_m_lk2(b->n_sample, pdg2[1], y2[1], 0);
+					for (k = 0; k <= M; ++k) y[k] = y2[0][k] * y2[1][k];
+					free(y2[0]); free(y2[1]); free(pdg2[0]); free(pdg2[1]);
+				} else bcf_m_lk2(b->n_sample, pdg, y, 0);
 				for (k = 0, sum = 0.; k <= M; ++k) sum += (long double)phi[k] * y[k];
 				for (k = 0, p_var = 0.; k < M; ++k) p_var += phi[k] * y[k] / sum;
 				p_ref = phi[M] * y[M] / sum;
