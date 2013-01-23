@@ -4,7 +4,7 @@
 
 static double g_q2p[256];
 
-double *bcf_m_get_pdg3(const bcf_hdr_t *h, bcf1_t *b)
+double *bcf_m_get_pdg3(const bcf_hdr_t *h, bcf1_t *b, const char *fmt)
 {
 	double *pdg;
 	int i, k, id_PL, id_GL;
@@ -13,8 +13,7 @@ double *bcf_m_get_pdg3(const bcf_hdr_t *h, bcf1_t *b)
 		for (i = 0; i < 256; ++i)
 			g_q2p[i] = pow(10., -0.1 * i);
 	id_PL = bcf_id2int(h, BCF_DT_ID, "PL");
-	id_GL = bcf_id2int(h, BCF_DT_ID, "GL");
-	if (id_PL < 0 && id_GL < 0) return 0;
+	if (id_PL < 0) return 0;
 	bcf_unpack(b, BCF_UN_FMT);
 	pdg = malloc(b->n_sample * 3 * sizeof(double));
 	for (i = 0; i < b->n_fmt; ++i) {

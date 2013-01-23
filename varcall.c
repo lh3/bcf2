@@ -113,7 +113,7 @@ int main(int argc, char *argv[])
 					phi = malloc((M + 1) * sizeof(double));
 					bcf_m_prior(prior_type, theta, M, phi);
 				}
-				pdg = bcf_m_get_pdg3(h1, b);
+				pdg = bcf_m_get_pdg3(h1, b, "PL");
 				y = malloc((M + 1) * sizeof(double));
 				bcf_m_lk2(b->n_sample, pdg, y, 0);
 				for (k = 0, sum = 0.; k <= M; ++k) sum += (long double)phi[k] * y[k];
