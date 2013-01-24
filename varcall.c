@@ -10,11 +10,22 @@
 #define FLAG_NOINDEL 8
 #define FLAG_VARONLY 16
 
+static float cal_qual(int M, double thres, const double *y, const double *phi)
+{
+	long double sum;
+	double p_var, p_ref;
+	int k;
+	for (k = 0, sum = 0.; k <= M; ++k) sum += (long double)phi[k] * y[k];
+	for (k = 0, p_var = 0.; k < M; ++k) p_var += phi[k] * y[k] / sum;
+	p_ref = phi[M] * y[M] / sum;
+	return p_var > thres? -4.343 * log(p_ref) : 4.343 * log(p_var);
+}
+
 int main(int argc, char *argv[])
 {
 	int i, c, clevel = -1, flag = 0, n_samples = -1, *imap = 0, prior_type = BCF_MP_WF, M;
 	char *fn_ref = 0, *fn_out = 0, moder[8], modew[8], **samples = 0;
-	bcf_hdr_t *h, *hsub = 0;
+	bcf_hdr_t *h, *hsub = 0, *hout;
 	htsFile *in, *out;
 	hts_idx_t *idx = 0;
 	bcf1_t *b;
@@ -75,12 +86,15 @@ int main(int argc, char *argv[])
 		hsub = bcf_hdr_subset(h, n_samples, samples, imap);
 	}
 	b = bcf_init1();
+	hout = hsub? hsub : h;
+	if (flag&FLAG_CALL)
+		bcf_hdr_append(h, "##INFO=<ID=SSQ,Number=2,Type=Float,Description=\"Strand-specific quality\">");
 
 	strcpy(modew, "w");
 	if (clevel >= 0 && clevel <= 9) sprintf(modew + 1, "%d", clevel);
 	if (flag&2) strcat(modew, "b");
 	out = hts_open(fn_out? fn_out : "-", modew, 0);
-	vcf_hdr_write(out, hsub? hsub : h);
+	vcf_hdr_write(out, hout);
 
 	if (optind + 1 < argc && !(flag&FLAG_VCFIN)) { // BAM input and has a region
 		if ((idx = bcf_index_load(argv[optind])) == 0) {
@@ -101,12 +115,11 @@ int main(int argc, char *argv[])
 			}
 		}
 		while (bcf_itr_next((BGZF*)in->fp, iter, b) >= 0) {
-			bcf_hdr_t *h1 = hsub? hsub : h;
+			bcf_hdr_t *h1 = hout;
 			if ((flag&FLAG_NOINDEL) && !bcf_is_snp(b)) continue;
 			if (imap) bcf_subset(h, b, n_samples, imap);
 			if (flag&FLAG_CALL) {
-				double *pdg, *y, p_var, p_ref;
-				long double sum = 0;
+				double *pdg, *y;
 				int k;
 				if (phi == 0) {
 					M = b->n_sample * 2; // FIXME: read ploidy from input!
@@ -117,6 +130,7 @@ int main(int argc, char *argv[])
 				y = malloc((M + 1) * sizeof(double));
 				if (pdg == 0) {
 					double *pdg2[2], *y2[2];
+					float ssq[2];
 					y2[0] = malloc((M + 1) * sizeof(double));
 					y2[1] = malloc((M + 1) * sizeof(double));
 					pdg2[0] = bcf_m_get_pdg3(h1, b, "FL");
@@ -124,14 +138,14 @@ int main(int argc, char *argv[])
 					bcf_m_lk2(b->n_sample, pdg2[0], y2[0], 0);
 					bcf_m_lk2(b->n_sample, pdg2[1], y2[1], 0);
 					for (k = 0; k <= M; ++k) y[k] = y2[0][k] * y2[1][k];
+					ssq[0] = cal_qual(M, p_var_thr, y2[0], phi);
+					ssq[1] = cal_qual(M, p_var_thr, y2[1], phi);
 					free(y2[0]); free(y2[1]); free(pdg2[0]); free(pdg2[1]);
+					bcf_enc_int1(&b->shared, bcf_id2int(hout, BCF_DT_ID, "SSQ")); bcf_enc_vfloat(&b->shared, 2, ssq); ++b->n_info;
 				} else bcf_m_lk2(b->n_sample, pdg, y, 0);
-				for (k = 0, sum = 0.; k <= M; ++k) sum += (long double)phi[k] * y[k];
-				for (k = 0, p_var = 0.; k < M; ++k) p_var += phi[k] * y[k] / sum;
-				p_ref = phi[M] * y[M] / sum;
+				b->qual = cal_qual(M, p_var_thr, y, phi);
 				free(y); free(pdg);
-				b->qual = p_var > p_var_thr? -4.343 * log(p_ref) : 4.343 * log(p_var);
-				if ((flag&FLAG_VARONLY) && p_var < p_var_thr) continue;
+				if ((flag&FLAG_VARONLY) && b->qual < 0.) continue;
 			}
 			vcf_write1(out, h1, b);
 		}
