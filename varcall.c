@@ -141,6 +141,10 @@ int main(int argc, char *argv[])
 					ssq[0] = cal_qual(M, p_var_thr, y2[0], phi);
 					ssq[1] = cal_qual(M, p_var_thr, y2[1], phi);
 					free(y2[0]); free(y2[1]); free(pdg2[0]); free(pdg2[1]);
+					if (p_var_thr > 0.4) {
+						ssq[0] = .1 * floor(ssq[0] * 10. + .499);
+						ssq[1] = .1 * floor(ssq[1] * 10. + .499);
+					}
 					bcf_enc_int1(&b->shared, bcf_id2int(hout, BCF_DT_ID, "SSQ")); bcf_enc_vfloat(&b->shared, 2, ssq); ++b->n_info;
 				} else bcf_m_lk2(b->n_sample, pdg, y, 0);
 				b->qual = cal_qual(M, p_var_thr, y, phi);
