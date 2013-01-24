@@ -94,7 +94,6 @@ typedef struct {
 	int *flt; // filter keys in the dictionary
 	bcf_info_t *info; // INFO
 	bcf_fmt_t *fmt; // FORMAT and individual sample
-	int n_var, var_type;
 } bcf_dec_t;
 
 typedef struct {
@@ -150,7 +149,6 @@ extern "C" {
 	
 	/** Deallocate a bcf1_t object */
 	void bcf_destroy1(bcf1_t *v);
-
 	void bcf_clear1(bcf1_t *v);
 
 	/**
@@ -194,6 +192,10 @@ extern "C" {
 
 	void bcf_fmt_array(kstring_t *s, int n, int type, void *data);
 	uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr);
+
+	void bcf_enc_vchar(kstring_t *s, int l, char *a);
+	void bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize);
+	void bcf_enc_vfloat(kstring_t *s, int n, float *a);
 	
 	/*****************
 	 *** BCF index ***
@@ -229,8 +231,6 @@ extern "C" {
 
 	bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap);
 	int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap);
-	const char **bcf_seq_names(const bcf_hdr_t *h, int *nseqs);
-	const char **bcf_sample_names(const bcf_hdr_t *h, int *nsmpls);
 	int bcf_is_snp(bcf1_t *v);
 
 #ifdef __cplusplus
@@ -242,18 +242,6 @@ extern "C" {
  *******************/
 
 #include "kstring.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-	void bcf_enc_vchar(kstring_t *s, int l, char *a);
-	void bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize);
-	void bcf_enc_vfloat(kstring_t *s, int n, float *a);
-
-#ifdef __cplusplus
-}
-#endif
 
 static inline void bcf_enc_size(kstring_t *s, int size, int type)
 {

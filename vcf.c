@@ -385,72 +385,6 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
 	} else return bcf_hdr_read((BGZF*)fp->fp);
 }
 
-const char **bcf_seq_names(const bcf_hdr_t *h, int *n)
-{
-	int m=0;
-	const char **names = NULL;
-	khint_t k;
-	vdict_t *d = (vdict_t*)h->dict[BCF_DT_CTG];
-	*n = 0;
-	for (k=kh_begin(d); k<kh_end(d); k++)
-	{
-		if ( !kh_exist(d,k) ) continue;
-		if ( *n>=m ) 
-		{
-			m += 50;
-			names = (const char**)realloc(names, m*sizeof(char*));
-		}
-		names[(*n)++] = kh_key(d,k);
-	}
-	return names;
-}
-
-
-const char **bcf_sample_names(const bcf_hdr_t *header, int *n)
-{
-	*n = 0;
-	if ( header->n[BCF_DT_SAMPLE]<=0 ) return NULL;
-
-	char *p = strstr(header->text,"\n#CHROM\t");
-	if ( !p ) return NULL; // malformatted header
-
-	int i = 0;
-	while ( *p && i<9 ) 
-	{
-		if ( *p=='\t' ) i++;
-		p++;
-	}
-	if ( !p ) return NULL; // malformatted header
-
-	const char **names = (const char **) malloc(header->n[BCF_DT_SAMPLE]*sizeof(char*));
-	char *p_prev = p;
-	kstring_t str = {0,0,0};
-	while ( *n<header->n[BCF_DT_SAMPLE] )
-	{
-		if ( *p=='\t' || !*p )
-		{
-			str.l = 0;
-			kputsn(p_prev,p-p_prev,&str);
-			str.s[p-p_prev] = 0;
-			int id = bcf_id2int(header, BCF_DT_SAMPLE, str.s);
-			names[(*n)++] = header->id[BCF_DT_SAMPLE][id].key;
-			p_prev = p+1;
-
-			if ( !*p && *n<header->n[BCF_DT_SAMPLE] ) 
-			{
-				// malformatted header
-				if ( str.s ) free(str.s);
-				free(names);
-				*n = 0;
-				return NULL;
-			}
-		}
-		p++;
-	}
-	if ( str.s ) free(str.s);
-	return names;
-}
-
 void vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
 {
 	if (!fp->is_bin) {
@@ -906,7 +840,6 @@ int bcf_unpack(bcf1_t *b, int which)
 		for (i = 0; i < b->n_allele; ++i)
 			d->allele[i] = tmp.s + offset[i];
 		d->m_str = tmp.m; d->id = tmp.s; // write tmp back
-		d->var_type = -1;
 		b->unpack_ptr = ptr;
 		b->unpacked |= BCF_UN_STR;
 	}
